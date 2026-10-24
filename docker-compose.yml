@@ -1,0 +1,42 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    volumes:
+      - vector_data:/data
+    environment:
+      - DB_PATH=/data/vector.db
+      - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
+      - DEFAULT_MODEL=${DEFAULT_MODEL:-gemma4:e4b}
+      - LIGHT_MODEL=${LIGHT_MODEL:-gemma4:e2b}
+      - DEEP_MODEL=${DEEP_MODEL:-qwen2.5-coder:7b}
+      - NUM_CTX=${NUM_CTX:-4096}
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - CORS_ORIGINS=${CORS_ORIGINS:-}
+    extra_hosts:
+      # Maps host.docker.internal to the host gateway on Linux
+      - "host.docker.internal:host-gateway"
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${PORT:-80}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  vector_data:

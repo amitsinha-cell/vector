@@ -166,6 +166,109 @@ VITE_API_URL=http://127.0.0.1:8000
 
 ---
 
+## Deployment (Docker & Linux VPS)
+
+Vector can be deployed to any Linux server or VPS (Ubuntu, Debian, etc.) using Docker Compose. Ollama runs natively on the host machine to leverage full GPU acceleration, while Docker manages the FastAPI backend and Nginx frontend.
+
+### Production Architecture
+
+```
+Internet / Browser ──► :80 (Nginx Frontend Container)
+                        ├── Static SPA files (React / Vite)
+                        └── /api/* ──► :8000 (FastAPI Backend Container)
+                                         └── /data/vector.db (SQLite Volume)
+                                         └──► host.docker.internal:11434 (Host Ollama / GPU)
+```
+
+### Step 1 — Install Ollama on the server (host)
+
+Run Ollama natively so it has direct access to your GPU:
+
+```bash
+curl -fsSL https://ollama.ai/install.sh | sh
+```
+
+Pull the required models:
+```bash
+ollama pull gemma4:e4b
+ollama pull gemma4:e2b
+ollama pull qwen2.5-coder:7b
+```
+
+Verify Ollama is running:
+```bash
+curl http://127.0.0.1:11434/api/tags
+```
+
+> **Important for Linux hosts:** By default, Ollama only binds to `127.0.0.1`. To allow Docker containers to reach it via `host.docker.internal`, configure Ollama to listen on all interfaces:
+> ```bash
+> sudo mkdir -p /etc/systemd/system/ollama.service.d
+> sudo tee /etc/systemd/system/ollama.service.d/environment.conf << 'EOF'
+> [Service]
+> Environment="OLLAMA_HOST=0.0.0.0:11434"
+> EOF
+> sudo systemctl daemon-reload
+> sudo systemctl restart ollama
+> ```
+
+### Step 2 — Clone the repository
+
+```bash
+git clone https://github.com/<you>/vector.git
+cd vector
+```
+
+### Step 3 — Configure environment
+
+Copy the example production environment file:
+```bash
+cp .env.production.example .env
+```
+
+Edit `.env` if needed (e.g. custom port, `GITHUB_TOKEN`, or model selection).
+
+### Step 4 — Build and start containers
+
+```bash
+docker compose up -d --build
+```
+
+Check container status and logs:
+```bash
+docker compose ps
+docker compose logs -f
+```
+
+Open `http://<your-server-ip>` in your browser. All summaries, history, and database records are persisted in the `vector_data` Docker volume.
+
+### Step 5 (Optional) — Enable HTTPS with Caddy or Let's Encrypt
+
+If pointing a domain to your server, you can use Caddy for automatic zero-config HTTPS:
+```
+yourdomain.com {
+    reverse_proxy localhost:80
+}
+```
+
+### Useful Docker commands
+
+```bash
+# Stop all services
+docker compose down
+
+# Restart all services
+docker compose restart
+
+# View backend / frontend logs
+docker compose logs -f backend
+docker compose logs -f frontend
+
+# Backup the SQLite database
+docker cp $(docker compose ps -q backend):/data/vector.db ./vector-backup.db
+```
+
+---
+
 ## Running tests
 
 ```bash
@@ -232,11 +335,16 @@ vector/
 │   │   ├── watcher.py     # File-change watcher & auto-summarise
 │   │   └── db.py          # SQLite helpers
 │   ├── tests/             # pytest test suite
+│   ├── Dockerfile         # Backend container definition
 │   └── requirements.txt
+├── deploy/
+│   └── nginx.conf         # Production Nginx reverse-proxy & SPA config
 ├── src/                   # Vite + React frontend
 │   ├── components/vector/ # App UI components
 │   ├── lib/               # API client, store, utilities
 │   └── routes/            # TanStack Router routes
+├── Dockerfile             # Multi-stage frontend build & Nginx runner
+├── docker-compose.yml     # Fullstack production orchestration
 ├── public/                # Static assets
 └── package.json
 ```

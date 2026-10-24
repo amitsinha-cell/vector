@@ -1,0 +1,15 @@
+node_modules
+.output
+.tanstack
+.vscode
+.git
+backend
+*.db
+*.db-shm
+*.db-wal
+.env
+.env.local
+*.log
+dist
+tests
+C:\Users\*
