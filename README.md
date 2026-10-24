@@ -166,106 +166,83 @@ VITE_API_URL=http://127.0.0.1:8000
 
 ---
 
-## Deployment (Docker & Linux VPS)
+## Deployment on Render (Free Tier)
 
-Vector can be deployed to any Linux server or VPS (Ubuntu, Debian, etc.) using Docker Compose. Ollama runs natively on the host machine to leverage full GPU acceleration, while Docker manages the FastAPI backend and Nginx frontend.
+Vector can be deployed directly to [Render](https://render.com) using the included `render.yaml` Blueprint or via the Render dashboard.
 
-### Production Architecture
+### Architecture on Render
 
-```
-Internet / Browser ──► :80 (Nginx Frontend Container)
-                        ├── Static SPA files (React / Vite)
-                        └── /api/* ──► :8000 (FastAPI Backend Container)
-                                         └── /data/vector.db (SQLite Volume)
-                                         └──► host.docker.internal:11434 (Host Ollama / GPU)
-```
+- **Frontend**: Render Static Site (free tier, automated CDN, SSL included)
+- **Backend**: Render Python Web Service (FastAPI + Uvicorn)
+- **LLM / Ollama**: Since Render's free tier provides 512 MB RAM without GPU, models run either:
+  1. On your **local machine with Ollama & GPU**, exposed to Render via a free tunnel (e.g. [ngrok](https://ngrok.com) or [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/))
+  2. On any remote Ollama server or hosted OpenAI-compatible provider (Groq, OpenRouter, etc.) configured in Vector's Settings
 
-### Step 1 — Install Ollama on the server (host)
+---
 
-Run Ollama natively so it has direct access to your GPU:
+### Option A — 1-Click Blueprint (Recommended)
 
-```bash
-curl -fsSL https://ollama.ai/install.sh | sh
-```
+1. Push your repository to GitHub.
+2. In the [Render Dashboard](https://dashboard.render.com), click **New +** → **Blueprint**.
+3. Select your `vector` repository.
+4. Render detects [`render.yaml`](render.yaml) and automatically creates:
+   - `vector-backend` (Python Web Service)
+   - `vector-frontend` (Static Site with SPA routing)
+5. Click **Apply**. Render will build and deploy both services.
 
-Pull the required models:
-```bash
-ollama pull gemma4:e4b
-ollama pull gemma4:e2b
-ollama pull qwen2.5-coder:7b
-```
+---
 
-Verify Ollama is running:
-```bash
-curl http://127.0.0.1:11434/api/tags
-```
+### Option B — Manual Dashboard Setup
 
-> **Important for Linux hosts:** By default, Ollama only binds to `127.0.0.1`. To allow Docker containers to reach it via `host.docker.internal`, configure Ollama to listen on all interfaces:
-> ```bash
-> sudo mkdir -p /etc/systemd/system/ollama.service.d
-> sudo tee /etc/systemd/system/ollama.service.d/environment.conf << 'EOF'
-> [Service]
-> Environment="OLLAMA_HOST=0.0.0.0:11434"
-> EOF
-> sudo systemctl daemon-reload
-> sudo systemctl restart ollama
-> ```
+#### 1. Deploy the Backend (Web Service)
+1. In Render Dashboard, click **New +** → **Web Service**.
+2. Connect your repository.
+3. Configure settings:
+   - **Name**: `vector-backend`
+   - **Root Directory**: `backend`
+   - **Runtime**: `Python 3`
+   - **Build Command**: `pip install -r requirements.txt`
+   - **Start Command**: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+4. Under **Environment Variables**, add:
+   - `PYTHON_VERSION`: `3.12.0`
+   - `CORS_ORIGINS`: `*`
+   - `OLLAMA_URL`: URL to your Ollama instance (see below)
+5. Click **Create Web Service**. Note the backend URL (e.g. `https://vector-backend.onrender.com`).
 
-### Step 2 — Clone the repository
+#### 2. Deploy the Frontend (Static Site)
+1. Click **New +** → **Static Site**.
+2. Connect your repository.
+3. Configure settings:
+   - **Name**: `vector-frontend`
+   - **Build Command**: `npm install && npm run build`
+   - **Publish Directory**: `.output/public`
+4. Under **Environment Variables**, add:
+   - `VITE_API_URL`: Your backend URL from step 1 (e.g. `https://vector-backend.onrender.com`)
+5. Under **Redirects / Rewrites**, add:
+   - **Type**: `Rewrite`
+   - **Source**: `/*`
+   - **Destination**: `/index.html`
+6. Click **Create Static Site**.
 
-```bash
-git clone https://github.com/<you>/vector.git
-cd vector
-```
+---
 
-### Step 3 — Configure environment
+### Connecting Ollama to Render for Free
 
-Copy the example production environment file:
-```bash
-cp .env.production.example .env
-```
+To run local Ollama models on your GPU while the web app is hosted on Render:
 
-Edit `.env` if needed (e.g. custom port, `GITHUB_TOKEN`, or model selection).
-
-### Step 4 — Build and start containers
-
-```bash
-docker compose up -d --build
-```
-
-Check container status and logs:
-```bash
-docker compose ps
-docker compose logs -f
-```
-
-Open `http://<your-server-ip>` in your browser. All summaries, history, and database records are persisted in the `vector_data` Docker volume.
-
-### Step 5 (Optional) — Enable HTTPS with Caddy or Let's Encrypt
-
-If pointing a domain to your server, you can use Caddy for automatic zero-config HTTPS:
-```
-yourdomain.com {
-    reverse_proxy localhost:80
-}
-```
-
-### Useful Docker commands
-
-```bash
-# Stop all services
-docker compose down
-
-# Restart all services
-docker compose restart
-
-# View backend / frontend logs
-docker compose logs -f backend
-docker compose logs -f frontend
-
-# Backup the SQLite database
-docker cp $(docker compose ps -q backend):/data/vector.db ./vector-backup.db
-```
+1. Start Ollama locally:
+   ```bash
+   ollama serve
+   ```
+2. In another terminal, start a free tunnel using [ngrok](https://ngrok.com):
+   ```bash
+   ngrok http 11434
+   ```
+3. Copy the forwarding URL (e.g. `https://abc1-23.ngrok-free.app`).
+4. In your Render backend service, set the environment variable:
+   ```
+   OLLAMA_URL=https://abc1-23.ngrok-free.app
+   ```
 
 ---
 
@@ -335,16 +312,12 @@ vector/
 │   │   ├── watcher.py     # File-change watcher & auto-summarise
 │   │   └── db.py          # SQLite helpers
 │   ├── tests/             # pytest test suite
-│   ├── Dockerfile         # Backend container definition
 │   └── requirements.txt
-├── deploy/
-│   └── nginx.conf         # Production Nginx reverse-proxy & SPA config
 ├── src/                   # Vite + React frontend
 │   ├── components/vector/ # App UI components
 │   ├── lib/               # API client, store, utilities
 │   └── routes/            # TanStack Router routes
-├── Dockerfile             # Multi-stage frontend build & Nginx runner
-├── docker-compose.yml     # Fullstack production orchestration
+├── render.yaml            # Render Blueprint deployment specification
 ├── public/                # Static assets
 └── package.json
 ```

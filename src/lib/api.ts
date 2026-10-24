@@ -9,13 +9,8 @@
 // ---------------------------------------------------------------------------
 
 export function getApiBaseUrl(): string {
-  const envUrl = import.meta.env["VITE_API_URL"];
-  if (typeof envUrl === "string") {
-    if (envUrl.length > 0) {
-      return envUrl;
-    }
-    // Explicit empty string means production relative path via Nginx reverse proxy (/api)
-    return "/api";
+  if (import.meta.env["VITE_API_URL"]) {
+    return import.meta.env["VITE_API_URL"] as string;
   }
   if (typeof window !== "undefined" && window.location.hostname) {
     const host = window.location.hostname;
