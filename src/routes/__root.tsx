@@ -35,12 +35,36 @@ function NotFoundComponent() {
   );
 }
 
-function ErrorComponent({ error, reset }: ErrorComponentProps) {
-  console.error(error);
+function ErrorComponent({ error: rawError, reset }: ErrorComponentProps) {
+  const error =
+    rawError instanceof Error ? rawError : rawError ? new Error(String(rawError)) : null;
+  console.error("Root ErrorComponent caught:", rawError);
   const router = useRouter();
   useEffect(() => {
-    reportLovableError(error, { boundary: "tanstack_root_error_component" });
-  }, [error]);
+    reportLovableError(rawError, { boundary: "tanstack_root_error_component" });
+  }, [rawError]);
+
+  const handleReset = () => {
+    // Clear only app's own browser storage, then reload fresh
+    try {
+      localStorage.removeItem("vector-state-v2");
+      localStorage.removeItem("vector-state-v1");
+      sessionStorage.removeItem("vector-state-v2");
+    } catch {
+      /* ignore */
+    }
+    window.location.href = "/";
+  };
+
+  const handleCopyError = () => {
+    const details = [
+      `Error: ${error?.name}: ${error?.message}`,
+      `URL: ${window.location.href}`,
+      `Time: ${new Date().toISOString()}`,
+      error?.stack ? `\nStack:\n${error.stack}` : "",
+    ].join("\n");
+    navigator.clipboard.writeText(details).catch(() => {});
+  };
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -51,6 +75,23 @@ function ErrorComponent({ error, reset }: ErrorComponentProps) {
         <p className="mt-2 text-sm text-muted-foreground">
           Something went wrong on our end. You can try refreshing or head back home.
         </p>
+
+        {error && (
+          <details className="mt-4 text-left border rounded-lg p-3 bg-muted/40 text-xs text-destructive">
+            <summary className="cursor-pointer font-medium select-none text-foreground">
+              Show details
+            </summary>
+            <p className="mt-2 font-mono font-semibold">
+              {error.name}: {error.message}
+            </p>
+            {error.stack && (
+              <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap font-mono text-[10px] text-muted-foreground">
+                {error.stack}
+              </pre>
+            )}
+          </details>
+        )}
+
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <button
             onClick={() => {
@@ -67,6 +108,21 @@ function ErrorComponent({ error, reset }: ErrorComponentProps) {
           >
             Go home
           </a>
+          <button
+            onClick={handleReset}
+            className="inline-flex items-center justify-center rounded-md border border-destructive/40 bg-background px-4 py-2 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10"
+            title="Clears only browser storage (localStorage/sessionStorage). Does NOT delete your backend history."
+          >
+            Reset local app state
+          </button>
+          {error && (
+            <button
+              onClick={handleCopyError}
+              className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent"
+            >
+              Copy error details
+            </button>
+          )}
         </div>
       </div>
     </div>

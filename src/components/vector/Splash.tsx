@@ -12,6 +12,7 @@ export function Splash({ onDone }: { onDone: () => void }) {
       const t = setTimeout(onDone, 350);
       return () => clearTimeout(t);
     }
+    return undefined;
   }, [p, onDone]);
   return (
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-8 bg-background">
@@ -20,14 +21,20 @@ export function Splash({ onDone }: { onDone: () => void }) {
         <h1 className="text-5xl font-semibold tracking-tight">
           <span className="text-brand">vector</span>
         </h1>
-        <p className="font-mono text-xs uppercase tracking-[0.3em] text-muted-foreground">local code intelligence</p>
+        <p className="font-mono text-xs uppercase tracking-[0.3em] text-muted-foreground">
+          local code intelligence
+        </p>
       </div>
       <div className="w-64 animate-rise" style={{ animationDelay: "0.15s" }}>
         <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
-          <div className="h-full rounded-full bg-brand transition-[width] duration-150" style={{ width: `${p}%` }} />
+          <div
+            className="h-full rounded-full bg-brand transition-[width] duration-150"
+            style={{ width: `${p}%` }}
+          />
         </div>
         <p className="mt-2 text-center font-mono text-[11px] text-muted-foreground">
-          {p < 40 ? "warming up runtime" : p < 80 ? "connecting local models" : "ready"} · {Math.floor(p)}%
+          {p < 40 ? "warming up runtime" : p < 80 ? "connecting local models" : "ready"} ·{" "}
+          {Math.floor(p)}%
         </p>
       </div>
     </div>

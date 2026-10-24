@@ -1,13 +1,19 @@
 // Local model client (Ollama-compatible API).
 import type { Message, Source } from "./store";
 
-export interface LocalModel { name: string; size?: number }
+export interface LocalModel {
+  name: string;
+  size?: number;
+}
 
 export async function listModels(endpoint: string): Promise<LocalModel[]> {
   const res = await fetch(`${endpoint.replace(/\/$/, "")}/api/tags`);
   if (!res.ok) throw new Error(`Model server responded ${res.status}`);
   const data = await res.json();
-  return (data.models ?? []).map((m: { name: string; size?: number }) => ({ name: m.name, size: m.size }));
+  return (data.models ?? []).map((m: { name: string; size?: number }) => ({
+    name: m.name,
+    size: m.size,
+  }));
 }
 
 function sourceBlock(s: Source) {
@@ -27,15 +33,22 @@ export async function streamSummary(opts: {
 }) {
   const { endpoint, model, system, history, sources, signal, onToken } = opts;
   const last = history[history.length - 1];
-  const used = sources.filter((s) => last.sourceIds?.includes(s.id));
-  const images = used.filter((s) => s.kind === "image" && s.content).map((s) => s.content!.split(",")[1]);
-  const ctx = used.filter((s) => s.kind !== "image").map(sourceBlock).join("\n\n");
+  const used = sources.filter((s) => last?.sourceIds?.includes(s.id));
+  const images = used
+    .filter((s) => s.kind === "image" && s.content)
+    .map((s) => s.content!.split(",")[1]);
+  const ctx = used
+    .filter((s) => s.kind !== "image")
+    .map(sourceBlock)
+    .join("\n\n");
   const messages = [
     { role: "system", content: system },
     ...history.slice(0, -1).map((m) => ({ role: m.role, content: m.content })),
     {
       role: "user",
-      content: (ctx ? `Code to summarise:\n\n${ctx}\n\n` : "") + (last.content || "Summarise the provided code."),
+      content:
+        (ctx ? `Code to summarise:\n\n${ctx}\n\n` : "") +
+        (last?.content || "Summarise the provided code."),
       ...(images.length ? { images } : {}),
     },
   ];
@@ -45,7 +58,8 @@ export async function streamSummary(opts: {
     body: JSON.stringify({ model, messages, stream: true }),
     signal,
   });
-  if (!res.ok || !res.body) throw new Error(`Model server responded ${res.status}: ${await res.text().catch(() => "")}`);
+  if (!res.ok || !res.body)
+    throw new Error(`Model server responded ${res.status}: ${await res.text().catch(() => "")}`);
   const reader = res.body.getReader();
   const dec = new TextDecoder();
   let buf = "";
@@ -64,7 +78,8 @@ export async function streamSummary(opts: {
   }
 }
 
-const CODE_EXT = /\.(ts|tsx|js|jsx|mjs|cjs|py|rb|go|rs|java|kt|swift|c|h|cpp|hpp|cs|php|scala|sh|sql|json|ya?ml|toml|md|vue|svelte|html|css|scss|lua|dart|r|ex|exs)$/i;
+const CODE_EXT =
+  /\.(ts|tsx|js|jsx|mjs|cjs|py|rb|go|rs|java|kt|swift|c|h|cpp|hpp|cs|php|scala|sh|sql|json|ya?ml|toml|md|vue|svelte|html|css|scss|lua|dart|r|ex|exs)$/i;
 
 export async function fetchGitHub(url: string): Promise<{ name: string; content: string }> {
   const u = new URL(url);
@@ -79,16 +94,24 @@ export async function fetchGitHub(url: string): Promise<{ name: string; content:
     const raw = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${rest.join("/")}`;
     const r = await fetch(raw);
     if (!r.ok) throw new Error(`GitHub responded ${r.status}`);
-    return { name: rest[rest.length - 1], content: await r.text() };
+    return { name: rest[rest.length - 1] ?? repo, content: await r.text() };
   }
   const meta = await fetch(`https://api.github.com/repos/${owner}/${repo}`);
   if (!meta.ok) throw new Error(`Repository not found (${meta.status})`);
   const ref = branch || (await meta.json()).default_branch;
   const prefix = type === "tree" ? rest.join("/") : "";
-  const tree = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/${ref}?recursive=1`);
+  const tree = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/git/trees/${ref}?recursive=1`,
+  );
   if (!tree.ok) throw new Error(`Couldn't read repository (${tree.status})`);
   const files = ((await tree.json()).tree as { path: string; type: string; size?: number }[])
-    .filter((f) => f.type === "blob" && CODE_EXT.test(f.path) && f.path.startsWith(prefix) && (f.size ?? 0) < 100000)
+    .filter(
+      (f) =>
+        f.type === "blob" &&
+        CODE_EXT.test(f.path) &&
+        f.path.startsWith(prefix) &&
+        (f.size ?? 0) < 100000,
+    )
     .slice(0, 25);
   const parts = await Promise.all(
     files.map(async (f) => {
@@ -96,5 +119,8 @@ export async function fetchGitHub(url: string): Promise<{ name: string; content:
       return r.ok ? `// FILE: ${f.path}\n${await r.text()}` : "";
     }),
   );
-  return { name: `${owner}/${repo}${prefix ? "/" + prefix : ""}`, content: parts.filter(Boolean).join("\n\n") };
+  return {
+    name: `${owner}/${repo}${prefix ? "/" + prefix : ""}`,
+    content: parts.filter(Boolean).join("\n\n"),
+  };
 }
